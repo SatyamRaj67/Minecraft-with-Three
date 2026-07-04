@@ -1,10 +1,18 @@
+import * as THREE from "three";
 import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 import type { World } from "./world";
 import { resources } from "./blocks";
 import type { Player } from "./player";
 
-export function createUI(world: World, player: Player) {
+export function createUI(scene: THREE.Scene, world: World, player: Player) {
   const gui = new GUI();
+
+
+  const sceneFolder = gui.addFolder("Scene");
+  // @ts-ignore
+  sceneFolder.add(scene.fog, 'near', 1, 200, 1).name('Fog Near');
+  // @ts-ignore
+  sceneFolder.add(scene.fog, 'far', 1, 200, 1).name('Fog Far');
 
   const playerFolder = gui.addFolder('Player');
   playerFolder.add(player, 'maxSpeed', 1, 20).name('Max Speed');
@@ -12,8 +20,8 @@ export function createUI(world: World, player: Player) {
 
   
   const terrainFolder = gui.addFolder("Terrain");
-  terrainFolder.add(world.size, "width", 8, 128, 1).name("Width");
-  terrainFolder.add(world.size, "height", 8, 128, 1).name("Height");
+  terrainFolder.add(world, "asyncLoading").name("Async Chunk Loading");
+  terrainFolder.add(world, "drawDistance", 0, 5).name("Render Distance");
   terrainFolder.add(world.params, "seed", 0, 10000).name("Seed");
   terrainFolder.add(world.params.terrain, "scale", 10, 100).name("Scale");
   terrainFolder.add(world.params.terrain, "magnitude", 0, 1).name("Magnitude");

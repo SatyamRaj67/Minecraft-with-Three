@@ -4,9 +4,15 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 export class Player {
   radius = 0.5;
   height = 1.75;
+
+  jumpSpeed = 10;
   maxSpeed = 10;
+
+  onGround = false;
+
   input = new THREE.Vector3();
   velocity = new THREE.Vector3();
+  #worldVelocity = new THREE.Vector3();
 
   boundsHelper: THREE.Mesh;
 
@@ -38,6 +44,19 @@ export class Player {
     scene.add(this.boundsHelper);
   }
 
+  get worldVelocity() {
+    this.#worldVelocity.copy(this.velocity);
+    this.#worldVelocity.applyEuler(
+      new THREE.Euler(0, this.camera.rotation.y, 0),
+    );
+    return this.#worldVelocity;
+  }
+
+  applyWorldDeltaVelocity(dv: THREE.Vector3) {
+    dv.applyEuler(new THREE.Euler(0, -this.camera.rotation.y, 0));
+    this.velocity.add(dv);
+  }
+
   applyInputs(dt: number) {
     if (this.controls.isLocked) {
       this.velocity.x = this.input.x;
@@ -45,6 +64,7 @@ export class Player {
 
       this.controls.moveRight(this.velocity.x * dt);
       this.controls.moveForward(this.velocity.z * dt);
+      this.position.y += this.velocity.y * dt;
 
       document.getElementById("player-position")!.innerHTML = this.toString();
     }
@@ -89,6 +109,11 @@ export class Player {
       case "KeyR":
         this.camera.position.set(32, 16, 32);
         this.velocity.set(0, 0, 0);
+        break;
+      case "Space":
+        if (this.onGround) {
+          this.velocity.y = this.jumpSpeed;
+        }
         break;
     }
   }
