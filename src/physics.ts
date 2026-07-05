@@ -17,16 +17,20 @@ const contactMaterial = new THREE.MeshBasicMaterial({
 const contactGeometry = new THREE.SphereGeometry(0.05, 6, 6);
 
 export class Physics {
-  simulationRate = 200;
-  timeStep = 1 / this.simulationRate;
-  accumulator = 0;
-
+  // Acceleration due to gravity
   gravity = 32;
+
+  // Physic simulation rate
+  simulationRate = 250;
+  stepSize = 1 / this.simulationRate;
+  // Accumulator to keep track of leftover dt
+  accumulator = 0;
 
   helpers: THREE.Group;
 
   constructor(scene: THREE.Scene) {
     this.helpers = new THREE.Group();
+    this.helpers.visible = false;
     scene.add(this.helpers);
   }
 
@@ -34,18 +38,15 @@ export class Physics {
    * Moves the physics simulation forward in time by 'dt'
    * @param {number} dt
    * @param {Player} player
-   * @param {World} world
+   * @param {WorldChunk} world
    */
   update(dt: number, player: Player, world: World) {
     this.accumulator += dt;
-
-    while (this.accumulator >= this.timeStep) {
-      this.helpers.clear();
-      player.velocity.y -= this.gravity * this.timeStep;
-      player.applyInputs(this.timeStep);
-      player.updateBoundsHelper();
+    while (this.accumulator >= this.stepSize) {
+      player.velocity.y -= this.gravity * this.stepSize;
+      player.applyInputs(this.stepSize);
       this.detectCollisions(player, world);
-      this.accumulator -= this.timeStep;
+      this.accumulator -= this.stepSize;
     }
   }
 
@@ -54,6 +55,7 @@ export class Physics {
    */
   detectCollisions(player: Player, world: World) {
     player.onGround = false;
+    this.helpers.clear();
 
     const candidates = this.broadPhase(player, world);
     const collisions = this.narrowPhase(candidates, player);
@@ -70,6 +72,13 @@ export class Physics {
    */
   broadPhase(player: Player, world: World) {
     const candidates = [];
+
+    // Get the block containing the center of the camera
+    // const playerBlockPos = {
+    //   x: Math.floor(player.position.x),
+    //   y: Math.floor(player.position.y),
+    //   z: Math.floor(player.position.z)
+    // };
 
     // Get the block extents of the player
     const minX = Math.floor(player.position.x - player.radius);
@@ -163,6 +172,49 @@ export class Physics {
   }
 
   /**
+   * Resolves each of the collisions found in the narrow-phase
+   * @param {*} collisions
+   * @param {Player} player
+   */
+  resolveCollisions(
+    collisions: {
+      contactPoint: { x: number; y: number; z: number };
+      normal: THREE.Vector3;
+      overlap: number;
+    }[],
+    player: Player,
+  ) {
+    // Resolve the collisions in order of the smallest overlap to the largest
+    // @ts-ignore
+    collisions.sort((a, b) => {
+      return a.overlap < b.overlap;
+    });
+
+    for (const collision of collisions) {
+      // We need to re-check if the contact point is inside the player bounding
+      // cylinder for each collision since the player position is updated after
+      // each collision is resolved
+      if (!this.pointInPlayerBoundingCylinder(collision.contactPoint, player))
+        continue;
+
+      // Adjust position of player so the block and player are no longer overlapping
+      let deltaPosition = collision.normal.clone();
+      deltaPosition.multiplyScalar(collision.overlap);
+      player.position.add(deltaPosition);
+
+      // Get the magnitude of the player's velocity along the collision normal
+      let magnitude = player.worldVelocity.dot(collision.normal);
+      // Remove that part of the velocity from the player's velocity
+      let velocityAdjustment = collision.normal
+        .clone()
+        .multiplyScalar(magnitude);
+
+      // Apply the velocity to the player
+      player.applyWorldDeltaVelocity(velocityAdjustment.negate());
+    }
+  }
+
+  /**
    * Returns true if the point 'p' is inside the player's bounding cylinder
    * @param {{ x: number, y: number, z: number }} p
    * @param {Player} player
@@ -171,7 +223,7 @@ export class Physics {
   pointInPlayerBoundingCylinder(
     p: { x: number; y: number; z: number },
     player: Player,
-  ) {
+  ): boolean {
     const dx = p.x - player.position.x;
     const dy = p.y - (player.position.y - player.height / 2);
     const dz = p.z - player.position.z;
@@ -181,43 +233,6 @@ export class Physics {
     return (
       Math.abs(dy) < player.height / 2 && r_sq < player.radius * player.radius
     );
-  }
-
-  /**
-   * Resolve each of the collisions found in the narrow-phase
-   * @param collisions
-   * @param player
-   */
-  resolveCollisions(
-    collisions: {
-      block: { x: number; y: number; z: number };
-      contactPoint: { x: number; y: number; z: number };
-      normal: THREE.Vector3;
-      overlap: number;
-    }[],
-    player: Player,
-  ) {
-    // @ts-ignore
-    collisions.sort((a, b) => {
-      return a.overlap < b.overlap;
-    });
-
-    for (const collision of collisions) {
-      if (!this.pointInPlayerBoundingCylinder(collision.contactPoint, player)) {
-        continue;
-      }
-
-      let deltaPosition = collision.normal.clone();
-      deltaPosition.multiplyScalar(collision.overlap);
-      player.position.add(deltaPosition);
-
-      let magnitude = player.worldVelocity.dot(collision.normal);
-      let velocityAdjustment = collision.normal
-        .clone()
-        .multiplyScalar(magnitude);
-
-      player.applyWorldDeltaVelocity(velocityAdjustment.negate());
-    }
   }
 
   /**
@@ -232,7 +247,7 @@ export class Physics {
 
   /**
    * Visualizes the contact at the point 'p'
-   * @param {{ x, y, z }} p
+   * @param {{ x: number, y: number, z: number }} p
    */
   addContactPointerHelper(p: { x: number; y: number; z: number }) {
     const contactMesh = new THREE.Mesh(contactGeometry, contactMaterial);
