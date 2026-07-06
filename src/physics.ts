@@ -8,13 +8,13 @@ const collisionMaterial = new THREE.MeshBasicMaterial({
   transparent: true,
   opacity: 0.2,
 });
-const collisionGeometry = new THREE.BoxGeometry(1.001, 1.001, 1.001);
+const collisionGeometry = new THREE.BoxGeometry(1.0067, 1.0067, 1.0067);
 
 const contactMaterial = new THREE.MeshBasicMaterial({
   wireframe: true,
   color: 0x00ff00,
 });
-const contactGeometry = new THREE.SphereGeometry(0.05, 6, 6);
+const contactGeometry = new THREE.SphereGeometry(0.067, 6, 6);
 
 export class Physics {
   // Acceleration due to gravity
@@ -38,7 +38,7 @@ export class Physics {
    * Moves the physics simulation forward in time by 'dt'
    * @param {number} dt
    * @param {Player} player
-   * @param {WorldChunk} world
+   * @param {World} world
    */
   update(dt: number, player: Player, world: World) {
     this.accumulator += dt;
@@ -70,15 +70,8 @@ export class Physics {
    * possible blocks the player may be colliding with
    * @returns {{ id: number, instanceId: number }[]}
    */
-  broadPhase(player: Player, world: World) {
+  broadPhase(player: Player, world: World): THREE.Vector3Like[] {
     const candidates = [];
-
-    // Get the block containing the center of the camera
-    // const playerBlockPos = {
-    //   x: Math.floor(player.position.x),
-    //   y: Math.floor(player.position.y),
-    //   z: Math.floor(player.position.z)
-    // };
 
     // Get the block extents of the player
     const minX = Math.floor(player.position.x - player.radius);
@@ -115,9 +108,14 @@ export class Physics {
    * @returns
    */
   narrowPhase(
-    candidates: { x: number; y: number; z: number }[],
+    candidates: THREE.Vector3Like[],
     player: Player,
-  ) {
+  ): {
+    block: THREE.Vector3Like;
+    contactPoint: THREE.Vector3Like;
+    normal: THREE.Vector3;
+    overlap: number;
+  }[] {
     const collisions = [];
 
     for (const block of candidates) {
@@ -178,7 +176,8 @@ export class Physics {
    */
   resolveCollisions(
     collisions: {
-      contactPoint: { x: number; y: number; z: number };
+      block: THREE.Vector3Like;
+      contactPoint: THREE.Vector3Like;
       normal: THREE.Vector3;
       overlap: number;
     }[],
@@ -220,10 +219,7 @@ export class Physics {
    * @param {Player} player
    * @returns {boolean}
    */
-  pointInPlayerBoundingCylinder(
-    p: { x: number; y: number; z: number },
-    player: Player,
-  ): boolean {
+  pointInPlayerBoundingCylinder(p: THREE.Vector3Like, player: Player) {
     const dx = p.x - player.position.x;
     const dy = p.y - (player.position.y - player.height / 2);
     const dz = p.z - player.position.z;
@@ -239,7 +235,7 @@ export class Physics {
    * Visualizes the block the player is colliding with
    * @param {THREE.Object3D} block
    */
-  addCollisionHelper(block: { x: number; y: number; z: number }) {
+  addCollisionHelper(block: THREE.Vector3Like) {
     const blockMesh = new THREE.Mesh(collisionGeometry, collisionMaterial);
     blockMesh.position.copy(block);
     this.helpers.add(blockMesh);
@@ -247,9 +243,9 @@ export class Physics {
 
   /**
    * Visualizes the contact at the point 'p'
-   * @param {{ x: number, y: number, z: number }} p
+   * @param {{ x, y, z }} p
    */
-  addContactPointerHelper(p: { x: number; y: number; z: number }) {
+  addContactPointerHelper(p: THREE.Vector3Like) {
     const contactMesh = new THREE.Mesh(contactGeometry, contactMaterial);
     contactMesh.position.copy(p);
     this.helpers.add(contactMesh);

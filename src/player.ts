@@ -2,28 +2,31 @@ import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import { World } from "./world";
 import { blocks } from "./blocks";
-import { Tool } from "./tool";
 
 const CENTER_SCREEN = new THREE.Vector2();
 
 export class Player {
+  height = 1.75;
+  radius = 0.67;
+  maxSpeed = 6.7;
+
+  jumpSpeed = 10;
+  sprinting = false;
+  onGround = false;
+
+  input = new THREE.Vector3();
+  velocity = new THREE.Vector3();
+  #worldVelocity = new THREE.Vector3();
+
   camera = new THREE.PerspectiveCamera(
-    75,
+    67,
     window.innerWidth / window.innerHeight,
     0.1,
-    200,
+    100,
   );
   cameraHelper = new THREE.CameraHelper(this.camera);
   controls = new PointerLockControls(this.camera, document.body);
-
-  height = 1.75;
-  radius = 0.5;
-  maxSpeed = 5;
-  jumpSpeed = 10;
-  onGround = false;
-  velocity = new THREE.Vector3();
-  #worldVelocity = new THREE.Vector3();
-  input = new THREE.Vector3();
+  debugCamera = false;
 
   raycaster = new THREE.Raycaster(
     new THREE.Vector3(),
@@ -31,22 +34,44 @@ export class Player {
     0,
     3,
   );
-  selectedCoords: THREE.Vector3 | null = null;
+  selectedCoords: THREE.Vector3 | undefined = undefined;
   activeBlockId = blocks.empty.id;
+
+  tool = {
+    // Group that will contain the tool mesh
+    container: new THREE.Group(),
+    // Whether or not the tool is currently animating
+    animate: false,
+    // The time the animation was started
+    animationStart: 0,
+    // The rotation speed of the tool
+    animationSpeed: 0.025,
+    // Reference to the current animation
+    animation: undefined as unknown as number,
+  };
+
+  world: World;
 
   boundsHelper: THREE.Mesh;
   selectionHelper: THREE.Mesh;
 
-  tool = new Tool();
-
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, world: World) {
+    this.world = world;
     this.position.set(32, 32, 32);
-    this.camera.layers.enable(1); // Enable layer 1 for the camera
     this.cameraHelper.visible = false;
     scene.add(this.camera);
     scene.add(this.cameraHelper);
 
-    this.camera.add(this.tool);
+    // Hide/show instructions based on pointer controls locking/unlocking
+    this.controls.addEventListener("lock", this.onCameraLock.bind(this));
+    this.controls.addEventListener("unlock", this.onCameraUnlock.bind(this));
+
+    // The tool is parented to the camera
+    this.camera.add(this.tool.container);
+
+    // Set raycaster to use layer 0 so it doesn't interact with water mesh on layer 1
+    this.raycaster.layers.set(0);
+    this.camera.layers.enable(1);
 
     // Wireframe mesh visualizing the player's bounding cylinder
     this.boundsHelper = new THREE.Mesh(
@@ -62,16 +87,25 @@ export class Player {
       opacity: 0.3,
       color: 0xffffaa,
     });
-    const selectionGeometry = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+    const selectionGeometry = new THREE.BoxGeometry(1.067, 1.067, 1.067);
     this.selectionHelper = new THREE.Mesh(selectionGeometry, selectionMaterial);
     scene.add(this.selectionHelper);
-
-    this.raycaster.layers.set(0);
 
     // Add event listeners for keyboard/mouse events
     document.addEventListener("keyup", this.onKeyUp.bind(this));
     document.addEventListener("keydown", this.onKeyDown.bind(this));
-    document.addEventListener("wheel", this.onScroll.bind(this));
+    document.addEventListener("mousedown", this.onMouseDown.bind(this));
+    document.addEventListener("wheel", this.onWheel.bind(this), { passive: false });
+  }
+
+  onCameraLock() {
+    document.getElementById("overlay")!.style.visibility = "hidden";
+  }
+
+  onCameraUnlock() {
+    if (!this.debugCamera) {
+      document.getElementById("overlay")!.style.visibility = "visible";
+    }
   }
 
   /**
@@ -81,7 +115,10 @@ export class Player {
   update(world: World) {
     this.updateBoundsHelper();
     this.updateRaycaster(world);
-    this.tool.update();
+
+    if (this.tool.animate) {
+      this.updateToolAnimation();
+    }
   }
 
   /**
@@ -112,13 +149,13 @@ export class Player {
       if (this.activeBlockId !== blocks.empty.id) {
         // If we are adding a block, move it 1 block over in the direction
         // of where the ray intersected the cube
-        this.selectedCoords.add(intersection.normal!);
+        this.selectedCoords.add(intersection.normal as THREE.Vector3);
       }
 
       this.selectionHelper.position.copy(this.selectedCoords);
       this.selectionHelper.visible = true;
     } else {
-      this.selectedCoords = null;
+      this.selectedCoords = undefined;
       this.selectionHelper.visible = false;
     }
   }
@@ -128,12 +165,17 @@ export class Player {
    * @param {Number} dt
    */
   applyInputs(dt: number) {
-    if (this.controls.isLocked) {
-      this.velocity.x = this.input.x;
-      this.velocity.z = this.input.z;
+    if (this.controls.isLocked === true) {
+      this.velocity.x = this.input.x * (this.sprinting ? 1.5 : 1);
+      this.velocity.z = this.input.z * (this.sprinting ? 1.5 : 1);
       this.controls.moveRight(this.velocity.x * dt);
       this.controls.moveForward(this.velocity.z * dt);
       this.position.y += this.velocity.y * dt;
+
+      if (this.position.y < 0) {
+        this.position.y = 0;
+        this.velocity.y = 0;
+      }
     }
 
     document.getElementById("info-player-position")!.innerHTML =
@@ -149,10 +191,38 @@ export class Player {
   }
 
   /**
+   * Set the tool object the player is holding
+   * @param {THREE.Mesh} tool
+   */
+  setTool(tool: THREE.Mesh) {
+    this.tool.container.clear();
+    this.tool.container.add(tool);
+    this.tool.container.receiveShadow = true;
+    this.tool.container.castShadow = true;
+
+    this.tool.container.position.set(0.6, -0.3, -0.5);
+    this.tool.container.scale.set(0.5, 0.5, 0.5);
+    this.tool.container.rotation.z = Math.PI / 2;
+    this.tool.container.rotation.y = Math.PI + 0.2;
+  }
+
+  /**
+   * Animates the tool rotation
+   */
+  updateToolAnimation() {
+    if (this.tool.container.children.length > 0) {
+      const t =
+        this.tool.animationSpeed *
+        (performance.now() - this.tool.animationStart);
+      this.tool.container.children[0].rotation.y = 0.5 * Math.sin(t);
+    }
+  }
+
+  /**
    * Returns the current world position of the player
    * @returns {THREE.Vector3}
    */
-  get position(): THREE.Vector3 {
+  get position() {
     return this.camera.position;
   }
 
@@ -160,7 +230,7 @@ export class Player {
    * Returns the velocity of the player in world coordinates
    * @returns {THREE.Vector3}
    */
-  get worldVelocity(): THREE.Vector3 {
+  get worldVelocity() {
     this.#worldVelocity.copy(this.velocity);
     this.#worldVelocity.applyEuler(
       new THREE.Euler(0, this.camera.rotation.y, 0),
@@ -181,39 +251,9 @@ export class Player {
    * Event handler for 'keyup' event
    * @param {KeyboardEvent} event
    */
-  onKeyUp(event: KeyboardEvent) {
-    switch (event.code) {
-      case "Escape":
-        if (event.repeat) break;
-        if (this.controls.isLocked) {
-          console.log("unlocking controls");
-          this.controls.unlock();
-        } else {
-          console.log("locking controls");
-          this.controls.lock();
-        }
-        break;
-      case "KeyW":
-        this.input.z = 0;
-        break;
-      case "KeyA":
-        this.input.x = 0;
-        break;
-      case "KeyS":
-        this.input.z = 0;
-        break;
-      case "KeyD":
-        this.input.x = 0;
-        break;
-    }
-  }
-
-  /**
-   * Event handler for 'keyup' event
-   * @param {KeyboardEvent} event
-   */
   onKeyDown(event: KeyboardEvent) {
     if (!this.controls.isLocked) {
+      this.debugCamera = false;
       this.controls.lock();
     }
 
@@ -227,13 +267,18 @@ export class Player {
       case "Digit6":
       case "Digit7":
       case "Digit8":
+        // Update the selected toolbar icon
         document
           .getElementById(`toolbar-${this.activeBlockId}`)
           ?.classList.remove("selected");
+        document
+          .getElementById(`toolbar-${event.key}`)
+          ?.classList.add("selected");
 
         this.activeBlockId = Number(event.key);
 
-        this.syncActiveBlockUI();
+        // Update the pickaxe visibility
+        this.tool.container.visible = this.activeBlockId === 0;
 
         break;
       case "KeyW":
@@ -249,36 +294,92 @@ export class Player {
         this.input.x = this.maxSpeed;
         break;
       case "KeyR":
-        this.position.set(32, 32, 32);
+        this.position.y = 32;
         this.velocity.set(0, 0, 0);
+        break;
+      case "ShiftLeft":
+      case "ShiftRight":
+        this.sprinting = true;
         break;
       case "Space":
         if (this.onGround) {
           this.velocity.y += this.jumpSpeed;
         }
         break;
+      case "F10":
+        this.debugCamera = true;
+        this.controls.unlock();
+        break;
     }
   }
 
-  onScroll(event: WheelEvent) {
-    const oldId = this.activeBlockId;
-
-    if (event.deltaY > 0) {
-      this.activeBlockId = (this.activeBlockId + 1) % 9;
-    } else {
-      this.activeBlockId = (this.activeBlockId + 8) % 9;
+  /**
+   * Event handler for 'keyup' event
+   * @param {KeyboardEvent} event
+   */
+  onKeyUp(event: KeyboardEvent) {
+    switch (event.code) {
+      case "KeyW":
+        this.input.z = 0;
+        break;
+      case "KeyA":
+        this.input.x = 0;
+        break;
+      case "KeyS":
+        this.input.z = 0;
+        break;
+      case "KeyD":
+        this.input.x = 0;
+        break;
+      case "ShiftLeft":
+      case "ShiftRight":
+        this.sprinting = false;
+        break;
     }
-
-    document.getElementById(`toolbar-${oldId}`)?.classList.remove("selected");
-    this.syncActiveBlockUI();
   }
 
-  private syncActiveBlockUI() {
-    document
-      .getElementById(`toolbar-${this.activeBlockId}`)
-      ?.classList.add("selected");
+  /**
+   * Event handler for 'mousedown'' event
+   * @param {MouseEvent} event
+   */
+  onMouseDown() {
+    if (this.controls.isLocked) {
+      // Is a block selected?
+      if (this.selectedCoords) {
+        // If active block is an empty block, then we are in delete mode
+        if (this.activeBlockId === blocks.empty.id) {
+          this.world.removeBlock(
+            this.selectedCoords.x,
+            this.selectedCoords.y,
+            this.selectedCoords.z,
+          );
+        } else {
+          this.world.addBlock(
+            this.selectedCoords.x,
+            this.selectedCoords.y,
+            this.selectedCoords.z,
+            this.activeBlockId,
+          );
+        }
 
-    this.tool.visible = this.activeBlockId === 0;
+        // If the tool isn't currently animating, trigger the animation
+        if (!this.tool.animate) {
+          this.tool.animate = true;
+          this.tool.animationStart = performance.now();
+
+          // Clear the existing timeout so it doesn't cancel our new animation
+          clearTimeout(this.tool.animation);
+
+          // Stop the animation after 1.5 cycles
+          this.tool.animation = setTimeout(
+            () => {
+              this.tool.animate = false;
+            },
+            (3 * Math.PI) / this.tool.animationSpeed,
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -287,9 +388,34 @@ export class Player {
    */
   toString() {
     let str = "";
-    str += `X: ${this.position.x.toFixed(3)} `;
-    str += `Y: ${this.position.y.toFixed(3)} `;
-    str += `Z: ${this.position.z.toFixed(3)}`;
+    str += `X: ${this.position.x.toFixed(0)} `;
+    str += `Y: ${this.position.y.toFixed(0)} `;
+    str += `Z: ${this.position.z.toFixed(0)}`;
     return str;
+  }
+
+  private setActiveBlock(id: number) {
+    const nextId = ((id % 9) + 9) % 9;
+
+    document
+      .getElementById(`toolbar-${this.activeBlockId}`)
+      ?.classList.remove("selected");
+
+    this.activeBlockId = nextId;
+
+    document
+      .getElementById(`toolbar-${this.activeBlockId}`)
+      ?.classList.add("selected");
+
+    this.tool.container.visible = this.activeBlockId === 0;
+  }
+
+  onWheel(event: WheelEvent) {
+    if (!this.controls.isLocked) return;
+
+    event.preventDefault();
+
+    const direction = event.deltaY > 0 ? 1 : -1;
+    this.setActiveBlock(this.activeBlockId + direction);
   }
 }

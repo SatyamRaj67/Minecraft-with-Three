@@ -5,8 +5,11 @@ import { World } from "./world";
 import { Player } from "./player";
 import { Physics } from "./physics";
 import { setupUI } from "./ui";
-import { blocks } from "./blocks";
 import { ModelLoader } from "./modelLoader";
+
+// UI Setup
+const stats = new Stats();
+document.body.appendChild(stats.dom);
 
 // Renderer setup
 const renderer = new THREE.WebGLRenderer();
@@ -17,6 +20,17 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
+// Scene setup
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x80a0e0, 50, 75);
+
+const world = new World();
+world.generate();
+scene.add(world);
+
+const player = new Player(scene, world);
+const physics = new Physics(scene);
+
 // Camera setup
 const orbitCamera = new THREE.PerspectiveCamera(
   75,
@@ -24,49 +38,77 @@ const orbitCamera = new THREE.PerspectiveCamera(
   0.1,
   1000,
 );
-orbitCamera.position.set(-32, 32, 32);
-orbitCamera.layers.enable(1); // Enable layer 1 for the camera
+orbitCamera.position.set(24, 24, 24);
+orbitCamera.layers.enable(1);
 
 const controls = new OrbitControls(orbitCamera, renderer.domElement);
-controls.target.set(32, 0, 32);
 controls.update();
-
-// Scene setup
-const scene = new THREE.Scene();
-const player = new Player(scene);
-const physics = new Physics(scene);
-const world = new World();
-scene.add(world);
 
 const modelLoader = new ModelLoader();
 modelLoader.loadModels((models) => {
-  player.tool.setMesh(models.pickaxe);
-})
+  player.setTool(models.pickaxe);
+});
 
-const sun = new THREE.DirectionalLight();
-sun.intensity = 1.5;
-sun.position.set(50, 50, 50);
-sun.castShadow = true;
+let sun: THREE.DirectionalLight;
+function setupLights() {
+  sun = new THREE.DirectionalLight();
+  sun.intensity = 1.5;
+  sun.position.set(50, 50, 50);
+  sun.castShadow = true;
 
-// Set the size of the sun's shadow box
-sun.shadow.camera.left = -40;
-sun.shadow.camera.right = 40;
-sun.shadow.camera.top = 40;
-sun.shadow.camera.bottom = -40;
-sun.shadow.camera.near = 0.1;
-sun.shadow.camera.far = 200;
-sun.shadow.bias = -0.0001;
-sun.shadow.mapSize = new THREE.Vector2(2048, 2048);
-scene.add(sun);
-scene.add(sun.target);
+  // Set the size of the sun's shadow box
+  sun.shadow.camera.left = -40;
+  sun.shadow.camera.right = 40;
+  sun.shadow.camera.top = 40;
+  sun.shadow.camera.bottom = -40;
+  sun.shadow.camera.near = 0.1;
+  sun.shadow.camera.far = 200;
+  sun.shadow.bias = -0.0001;
+  sun.shadow.mapSize = new THREE.Vector2(2048, 2048);
+  scene.add(sun);
+  scene.add(sun.target);
 
-const ambient = new THREE.AmbientLight();
-ambient.intensity = 0.2;
-scene.add(ambient);
+  const ambient = new THREE.AmbientLight();
+  ambient.intensity = 0.2;
+  scene.add(ambient);
+}
 
-scene.fog = new THREE.Fog(0x80a0e0, 50, 100);
+// Render loop
+let previousTime = performance.now();
+function animate() {
+  requestAnimationFrame(animate);
 
-// Events
+  const currentTime = performance.now();
+  const dt = (currentTime - previousTime) / 1000;
+
+  // Only update physics when player controls are locked
+  if (player.controls.isLocked) {
+    physics.update(dt, player, world);
+    player.update(world);
+    world.update(player);
+
+    // Position the sun relative to the player. Need to adjust both the
+    // position and target of the sun to keep the same sun angle
+    sun.position.copy(player.camera.position);
+    sun.position.sub(new THREE.Vector3(-50, -50, -50));
+    sun.target.position.copy(player.camera.position);
+
+    // Update positon of the orbit camera to track player
+    orbitCamera.position
+      .copy(player.position)
+      .add(new THREE.Vector3(16, 16, 16));
+    controls.target.copy(player.position);
+  }
+
+  renderer.render(
+    scene,
+    player.controls.isLocked ? player.camera : orbitCamera,
+  );
+  stats.update();
+
+  previousTime = currentTime;
+}
+
 window.addEventListener("resize", () => {
   // Resize camera aspect ratio and renderer size to the new window size
   orbitCamera.aspect = window.innerWidth / window.innerHeight;
@@ -77,62 +119,6 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// UI Setup
-const stats = new Stats();
-document.body.appendChild(stats.dom);
-
-// User input
-
-/**
- * Event handler for 'mousedown'' event
- * @param {MouseEvent} event
- */
-function onMouseDown() {
-  if (player.controls.isLocked && player.selectedCoords) {
-    if (player.activeBlockId !== blocks.empty.id) {
-      world.addBlock(
-        player.selectedCoords.x,
-        player.selectedCoords.y,
-        player.selectedCoords.z,
-        player.activeBlockId,
-      );
-      player.tool.startAnimation();
-    } else {
-      world.removeBlock(
-        player.selectedCoords.x,
-        player.selectedCoords.y,
-        player.selectedCoords.z,
-      );
-    }
-  }
-}
-document.addEventListener("mousedown", onMouseDown);
-
-// Render loop
-let previousTime = performance.now();
-function animate() {
-  requestAnimationFrame(animate);
-
-  const currentTime = performance.now();
-  const dt = (currentTime - previousTime) / 1000;
-
-  // Position the sun relative to the player. Need to adjust both the
-  // position and target of the sun to keep the same sun angle
-  sun.position.copy(player.camera.position);
-  sun.position.sub(new THREE.Vector3(-50, -50, -50));
-  sun.target.position.copy(player.camera.position);
-
-  physics.update(dt, player, world);
-  player.update(world);
-  world.update(player);
-  renderer.render(
-    scene,
-    player.controls.isLocked ? player.camera : orbitCamera,
-  );
-  stats.update();
-
-  previousTime = currentTime;
-}
-
 setupUI(world, player, physics, scene);
+setupLights();
 animate();
