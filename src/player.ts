@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import { World } from "./world";
 import { blocks } from "./blocks";
+import { Tool } from "./tool";
 
 const CENTER_SCREEN = new THREE.Vector2();
 
@@ -10,7 +11,7 @@ export class Player {
     75,
     window.innerWidth / window.innerHeight,
     0.1,
-    100,
+    200,
   );
   cameraHelper = new THREE.CameraHelper(this.camera);
   controls = new PointerLockControls(this.camera, document.body);
@@ -31,16 +32,21 @@ export class Player {
     3,
   );
   selectedCoords: THREE.Vector3 | null = null;
-  activeBlockId = blocks.dirt.id;
+  activeBlockId = blocks.empty.id;
 
   boundsHelper: THREE.Mesh;
   selectionHelper: THREE.Mesh;
 
+  tool = new Tool();
+
   constructor(scene: THREE.Scene) {
     this.position.set(32, 32, 32);
+    this.camera.layers.enable(1); // Enable layer 1 for the camera
     this.cameraHelper.visible = false;
     scene.add(this.camera);
     scene.add(this.cameraHelper);
+
+    this.camera.add(this.tool);
 
     // Wireframe mesh visualizing the player's bounding cylinder
     this.boundsHelper = new THREE.Mesh(
@@ -60,9 +66,12 @@ export class Player {
     this.selectionHelper = new THREE.Mesh(selectionGeometry, selectionMaterial);
     scene.add(this.selectionHelper);
 
+    this.raycaster.layers.set(0);
+
     // Add event listeners for keyboard/mouse events
     document.addEventListener("keyup", this.onKeyUp.bind(this));
     document.addEventListener("keydown", this.onKeyDown.bind(this));
+    document.addEventListener("wheel", this.onScroll.bind(this));
   }
 
   /**
@@ -72,6 +81,7 @@ export class Player {
   update(world: World) {
     this.updateBoundsHelper();
     this.updateRaycaster(world);
+    this.tool.update();
   }
 
   /**
@@ -206,6 +216,7 @@ export class Player {
     if (!this.controls.isLocked) {
       this.controls.lock();
     }
+
     switch (event.code) {
       case "Digit0":
       case "Digit1":
@@ -213,8 +224,17 @@ export class Player {
       case "Digit3":
       case "Digit4":
       case "Digit5":
+      case "Digit6":
+      case "Digit7":
+      case "Digit8":
+        document
+          .getElementById(`toolbar-${this.activeBlockId}`)
+          ?.classList.remove("selected");
+
         this.activeBlockId = Number(event.key);
-        console.log(`activeBlockId = ${event.key}`);
+
+        this.syncActiveBlockUI();
+
         break;
       case "KeyW":
         this.input.z = this.maxSpeed;
@@ -238,6 +258,27 @@ export class Player {
         }
         break;
     }
+  }
+
+  onScroll(event: WheelEvent) {
+    const oldId = this.activeBlockId;
+
+    if (event.deltaY > 0) {
+      this.activeBlockId = (this.activeBlockId + 1) % 9;
+    } else {
+      this.activeBlockId = (this.activeBlockId + 8) % 9;
+    }
+
+    document.getElementById(`toolbar-${oldId}`)?.classList.remove("selected");
+    this.syncActiveBlockUI();
+  }
+
+  private syncActiveBlockUI() {
+    document
+      .getElementById(`toolbar-${this.activeBlockId}`)
+      ?.classList.add("selected");
+
+    this.tool.visible = this.activeBlockId === 0;
   }
 
   /**

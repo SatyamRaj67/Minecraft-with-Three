@@ -17,3 +17,31 @@ body{
   color: white;
   margin: 0.5em;
 }
+
+#toolbar-container {
+  position: fixed;
+  bottom: 0.25em;
+  width: 100%;
+
+  display: flex;
+  justify-content: center;
+}
+
+#toolbar {
+  background-color: rgba(109, 109, 109, 1);
+  border: 0.25em solid rgba(147, 147, 147, 1);
+  padding: 0.5em;
+  display: flex;
+  justify-content: space-between;
+  column-gap: 0.75em;
+}
+
+.toolbar-icon{
+  width: 4em;
+  height: 4em;
+  outline: 0.25em solid rgba(58, 58, 58, 1);
+}
+
+.toolbar-icon.selected{
+  outline: 0.25em solid rgba(255, 255, 255, 1);
+}

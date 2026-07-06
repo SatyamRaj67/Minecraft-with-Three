@@ -1,11 +1,12 @@
-import * as THREE from 'three';
-import Stats from 'three/examples/jsm/libs/stats.module.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { World } from './world';
-import { Player } from './player';
-import { Physics } from './physics';
-import { setupUI } from './ui';
-import { blocks } from './blocks';
+import * as THREE from "three";
+import Stats from "three/examples/jsm/libs/stats.module.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { World } from "./world";
+import { Player } from "./player";
+import { Physics } from "./physics";
+import { setupUI } from "./ui";
+import { blocks } from "./blocks";
+import { ModelLoader } from "./modelLoader";
 
 // Renderer setup
 const renderer = new THREE.WebGLRenderer();
@@ -17,8 +18,14 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 // Camera setup
-const orbitCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const orbitCamera = new THREE.PerspectiveCamera(
+  75,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000,
+);
 orbitCamera.position.set(-32, 32, 32);
+orbitCamera.layers.enable(1); // Enable layer 1 for the camera
 
 const controls = new OrbitControls(orbitCamera, renderer.domElement);
 controls.target.set(32, 0, 32);
@@ -30,6 +37,11 @@ const player = new Player(scene);
 const physics = new Physics(scene);
 const world = new World();
 scene.add(world);
+
+const modelLoader = new ModelLoader();
+modelLoader.loadModels((models) => {
+  player.tool.setMesh(models.pickaxe);
+})
 
 const sun = new THREE.DirectionalLight();
 sun.intensity = 1.5;
@@ -55,13 +67,13 @@ scene.add(ambient);
 scene.fog = new THREE.Fog(0x80a0e0, 50, 100);
 
 // Events
-window.addEventListener('resize', () => {
+window.addEventListener("resize", () => {
   // Resize camera aspect ratio and renderer size to the new window size
   orbitCamera.aspect = window.innerWidth / window.innerHeight;
   orbitCamera.updateProjectionMatrix();
   player.camera.aspect = window.innerWidth / window.innerHeight;
   player.camera.updateProjectionMatrix();
-  
+
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
@@ -73,27 +85,28 @@ document.body.appendChild(stats.dom);
 
 /**
  * Event handler for 'mousedown'' event
- * @param {MouseEvent} event 
+ * @param {MouseEvent} event
  */
-function onMouseDown(event: MouseEvent) {
+function onMouseDown() {
   if (player.controls.isLocked && player.selectedCoords) {
     if (player.activeBlockId !== blocks.empty.id) {
       world.addBlock(
         player.selectedCoords.x,
         player.selectedCoords.y,
         player.selectedCoords.z,
-        player.activeBlockId
+        player.activeBlockId,
       );
+      player.tool.startAnimation();
     } else {
       world.removeBlock(
         player.selectedCoords.x,
         player.selectedCoords.y,
-        player.selectedCoords.z
+        player.selectedCoords.z,
       );
     }
   }
 }
-document.addEventListener('mousedown', onMouseDown);
+document.addEventListener("mousedown", onMouseDown);
 
 // Render loop
 let previousTime = performance.now();
@@ -112,7 +125,10 @@ function animate() {
   physics.update(dt, player, world);
   player.update(world);
   world.update(player);
-  renderer.render(scene, player.controls.isLocked ? player.camera : orbitCamera);
+  renderer.render(
+    scene,
+    player.controls.isLocked ? player.camera : orbitCamera,
+  );
   stats.update();
 
   previousTime = currentTime;
