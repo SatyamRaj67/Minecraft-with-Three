@@ -154,6 +154,10 @@ export class WorldChunk extends THREE.Group {
             if (rng.random() < this.params.trees.frequency) {
               this.generateTree(rng, biome, x, height + 1, z);
             }
+
+            if (rng.random() < 0.005) {
+              this.generateStructure(rng, x, height + 1, z);
+            }
           } else if (
             y < height &&
             this.getBlock(x, y, z)?.id === blocks.empty.id
@@ -259,6 +263,55 @@ export class WorldChunk extends THREE.Group {
               );
             }
           }
+        }
+      }
+    }
+  }
+
+  /**
+   * Creates a 67 structure of blocks on the ground
+   * @param {RNG} rng
+   * @param {number} x
+   * @param {number} y
+   * @param {number} z
+   */
+  generateStructure(rng: RNG, x: number, y: number, z: number) {
+    const pattern6 = [
+      [1, 1, 1], // Top
+      [1, 0, 0],
+      [1, 1, 1], // Middle
+      [1, 0, 1],
+      [1, 1, 1], // Bottom
+    ];
+
+    const pattern7 = [
+      [1, 1, 1], // Top
+      [0, 0, 1],
+      [0, 1, 0], // Middle
+      [1, 0, 0],
+      [1, 0, 0],
+    ];
+
+    const blockType = blocks.dirt.id;
+
+    const height = 5;
+    const width = 3;
+    const gap = 1;
+
+    for (let py = 0; py < height; py++) {
+      for (let px = 0; px < width; px++) {
+        if (pattern6[height - 1 - py][px] === 1) {
+          this.setBlockId(x + px, y + py, z, blockType);
+        }
+      }
+    }
+
+    const startXFor7 = x + width + gap;
+
+    for (let py = 0; py < height; py++) {
+      for (let px = 0; px < width; px++) {
+        if (pattern7[height - 1 - py][px] === 1) {
+          this.setBlockId(startXFor7 + px, y + py, z, blockType);
         }
       }
     }
@@ -389,9 +442,13 @@ export class WorldChunk extends THREE.Group {
    * @param {number} x
    * @param {number} y
    * @param {number} z
-   * @returns {{id: number, instanceId: number}}
+   * @returns {{id: number, instanceId: number | null} | null}
    */
-  getBlock(x: number, y: number, z: number) {
+  getBlock(
+    x: number,
+    y: number,
+    z: number,
+  ): { id: number; instanceId: number | null } | null {
     if (this.inBounds(x, y, z)) {
       return this.data[x][y][z];
     } else {
@@ -526,7 +583,12 @@ export class WorldChunk extends THREE.Group {
    * @param {number} z
    * @param {number} instanceId
    */
-  setBlockInstanceId(x: number, y: number, z: number, instanceId: number | null) {
+  setBlockInstanceId(
+    x: number,
+    y: number,
+    z: number,
+    instanceId: number | null,
+  ) {
     if (this.inBounds(x, y, z) && instanceId) {
       this.data[x][y][z].instanceId = instanceId;
     }

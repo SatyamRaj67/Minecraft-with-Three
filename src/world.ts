@@ -238,9 +238,13 @@ export class World extends THREE.Group {
    * @param {number} x
    * @param {number} y
    * @param {number} z
-   * @returns {{id: number, instanceId: number} | null}
+   * @returns {{id: number, instanceId: number | null} | null}
    */
-  getBlock(x: number, y: number, z: number) {
+  getBlock(
+    x: number,
+    y: number,
+    z: number,
+  ): { id: number; instanceId: number | null } | null {
     const coords = this.worldToChunkCoords(x, y, z);
     const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
 
@@ -263,7 +267,14 @@ export class World extends THREE.Group {
    *  block: { x: number, y: number, z: number}
    * }}
    */
-  worldToChunkCoords(x: number, y: number, z: number) {
+  worldToChunkCoords(
+    x: number,
+    y: number,
+    z: number,
+  ): {
+    chunk: { x: number; z: number };
+    block: { x: number; y: number; z: number };
+  } {
     const chunkCoords = {
       x: Math.floor(x / this.chunkSize.width),
       z: Math.floor(z / this.chunkSize.width),
