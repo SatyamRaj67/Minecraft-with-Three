@@ -156,7 +156,7 @@ export class WorldChunk extends THREE.Group {
             }
 
             if (rng.random() < 0.005) {
-              this.generateStructure(rng, x, height + 1, z);
+              this.generateStructure(x, height + 1, z);
             }
           } else if (
             y < height &&
@@ -270,12 +270,11 @@ export class WorldChunk extends THREE.Group {
 
   /**
    * Creates a 67 structure of blocks on the ground
-   * @param {RNG} rng
    * @param {number} x
    * @param {number} y
    * @param {number} z
    */
-  generateStructure(rng: RNG, x: number, y: number, z: number) {
+  generateStructure(x: number, y: number, z: number) {
     const pattern6 = [
       [1, 1, 1], // Top
       [1, 0, 0],
